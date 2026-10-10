@@ -87,7 +87,7 @@ rag-assistant/
 ### 1. Clone արեք repository-ն
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/YeghiazarianVahe/rag-document-assistant.git
 cd rag-assistant
 ```
 
