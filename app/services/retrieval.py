@@ -15,6 +15,10 @@ def embed_chunks(chunks: list[str]):
     return model.encode(chunks)
 
 
+def embed_query(query: str):
+    return model.encode(query)
+
+
 def retrieve_chunks(
     query: str, chunks: list[str], chunk_embeddings, top_k: int = 2
 ) -> list[dict]:

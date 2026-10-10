@@ -11,3 +11,4 @@ class AskResponse(BaseModel):
     top_k: int
     context: list[dict]
     answer: str
+    sources: list[dict]

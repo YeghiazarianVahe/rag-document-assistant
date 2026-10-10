@@ -1,111 +1,144 @@
 # RAG Document Assistant
 
-PDF փաստաթղթերի բովանդակության հիման վրա հարցերին պատասխանող պարզ RAG համակարգ՝ կառուցված Python-ի և FastAPI-ի միջոցով։
+PDF փաստաթղթերի վրա հիմնված հարցուպատասխանի REST API՝ կառուցված FastAPI-ով։ Համակարգը փաստաթղթերից ստանում է տեքստը, ստեղծում է semantic embeddings, համապատասխան հատվածները պահում և որոնում է ChromaDB-ում, ապա Anthropic LLM-ի միջոցով ձևավորում է պատասխան՝ վերադարձնելով նաև օգտագործված աղբյուրները։
 
-## Խնդրի նկարագրություն
+## Հիմնական հնարավորությունները
 
-Մեծ ծավալի փաստաթղթերում անհրաժեշտ տեղեկությունը ձեռքով գտնելը ժամանակատար է։ Միևնույն ժամանակ ամբողջ փաստաթուղթը յուրաքանչյուր հարցման ժամանակ Large Language Model-ին (`LLM`) փոխանցելը արդյունավետ չէ և կարող է սահմանափակվել model-ի context window-ով։
+- PDF փաստաթղթերի բեռնում և տեքստի extraction
+- Overlap ունեցող character-based chunking
+- `all-MiniLM-L6-v2` model-ով local embeddings
+- ChromaDB persistent vector store
+- Cosine similarity-ով semantic search
+- Anthropic Claude-ի միջոցով context-grounded պատասխաններ
+- Պատասխանի հետ source metadata՝ filename և chunk index
+- Բեռնված փաստաթղթերի library
+- Փաստաթղթի և դրա բոլոր chunk-երի ջնջում
+- Pydantic request/response validation
+- Pytest automated tests
+- Docker containerization
 
-Այս նախագծի նպատակը PDF փաստաթուղթ բեռնելու և դրա բովանդակության վերաբերյալ բնական լեզվով հարցեր տալու հնարավորություն ստեղծելն է։ Համակարգը կիրառում է **RAG (Retrieval-Augmented Generation)** մոտեցումը՝ նախ գտնելով հարցին համապատասխան հատվածները, ապա դրանք օգտագործելով պատասխանի համար անհրաժեշտ context կառուցելու նպատակով։
-
-RAG pipeline-ի հիմնական քայլերն են՝
-
-1. PDF փաստաթղթից ստանալ տեքստը։
-2. Տեքստը բաժանել փոքր հատվածների՝ `chunks`։
-3. Յուրաքանչյուր chunk-ը վերածել embedding vector-ի։
-4. Օգտատիրոջ հարցը նույնպես վերածել embedding vector-ի։
-5. Cosine similarity-ի միջոցով գտնել հարցին իմաստային առումով ամենամոտ chunk-երը։
-6. Ընտրված chunk-երից կառուցել LLM-ի համար անհրաժեշտ context-ը և prompt-ը։
-7. LLM-ի միջոցով ստեղծել վերջնական պատասխան։
-
-## Ինչու է պետք RAG
-
-Առանց retrieval փուլի ամբողջ փաստաթուղթը յուրաքանչյուր հարցման հետ LLM-ին ուղարկելը մի քանի խնդիր է առաջացնում՝
-
-- LLM-ի context window-ը սահմանափակ է,
-- մեծ prompt-երը բարձրացնում են հարցման արժեքը,
-- response-ի latency-ն մեծանում է,
-- ավելորդ կամ ոչ համապատասխան context-ը կարող է վատացնել պատասխանի որակը,
-- մեծ փաստաթղթերի մշակումը դառնում է դժվար մասշտաբավորվող։
-
-RAG-ը նախ ընտրում է միայն հարցին համապատասխան հատվածները և LLM-ին փոխանցում է նպատակային context։ Սա նվազեցնում է փոխանցվող տվյալների ծավալը և օգնում է ստանալ փաստաթղթի բովանդակության վրա հիմնված պատասխան։
-
-Պարզեցված ձևով՝
-
-```text
-Retrieval = գտնել համապատասխան տեղեկությունը
-Generation = այդ տեղեկության հիման վրա կազմել պատասխանը
-```
-
-## Օրինակ
-
-Ենթադրենք՝ փաստաթղթում գրված է՝
-
-> Customers can return products within 30 days of purchase.
-
-Օգտատերը հարցնում է՝
-
-> Can I return my purchase after two weeks?
-
-Համակարգը հարցը և փաստաթղթի chunk-երը վերածում է embedding vector-ների։ Similarity search-ի միջոցով ընտրվում է հարցին ամենամոտ chunk-ը, ապա կառուցվում է հետևյալ prompt-ը՝
-
-```text
-Context:
-Customers can return products within 30 days of purchase.
-
-Question:
-Can I return my purchase after two weeks?
-
-Answer:
-```
-
-LLM-ը կարող է վերադարձնել՝
-
-```text
-Yes. Two weeks is within the 30-day return period.
-```
-
-## Pipeline
+## Ինչպես է աշխատում
 
 ```text
 PDF upload
     ↓
-PDF text extraction
+PyPDF text extraction
     ↓
-Text chunking
+Character-based chunking (500 chars, 100 overlap)
     ↓
-Chunk embeddings
+Sentence Transformers embeddings
     ↓
-User question
+ChromaDB persistent collection
     ↓
-Query embedding
-    ↓
-Cosine similarity
+Question embedding + cosine similarity search
     ↓
 Top-K relevant chunks
     ↓
-Prompt construction
+Anthropic LLM prompt
     ↓
-LLM generation
-    ↓
-Final answer
+Answer + source citations
 ```
 
-## Օգտագործվող տեխնոլոգիաներ
+RAG-ը (Retrieval-Augmented Generation) թույլ է տալիս ամբողջ PDF-ը յուրաքանչյուր հարցման ժամանակ LLM-ին չուղարկել։ Փոխարենը համակարգը նախ գտնում է հարցին իմաստային առումով ամենամոտ chunk-երը և model-ին փոխանցում միայն այդ context-ը։ Սա նվազեցնում է prompt-ի ծավալը և օգնում է պատասխանը կապել բեռնված փաստաթղթերի բովանդակությանը։
 
-- **Python** — նախագծի հիմնական լեզու
-- **FastAPI** — REST API-ի ստեղծում
-- **Pydantic** — request և response տվյալների validation
-- **PyPDF** — PDF ֆայլերից տեքստի ստացում
-- **Sentence Transformers** — տեքստային embeddings-ի ստեղծում
-- **NumPy** — vector-ների հետ աշխատանք և similarity հաշվարկներ
+## Tech stack
+
+- **Python 3.12**
+- **FastAPI** — REST API
+- **Pydantic** — request/response schemas
+- **PyPDF** — PDF text extraction
+- **Sentence Transformers** — embeddings
+- **`all-MiniLM-L6-v2`** — embedding model
+- **ChromaDB** — persistent vector database
+- **Anthropic SDK** — Claude LLM integration
 - **Uvicorn** — ASGI server
+- **Pytest** — automated tests
+- **Docker** — containerized runtime
 
-Օգտագործվող embedding model-ը՝
+## Նախագծի կառուցվածքը
 
 ```text
-all-MiniLM-L6-v2
+rag-assistant/
+├── app/
+│   ├── api/
+│   │   └── routes.py
+│   ├── models/
+│   │   └── schemas.py
+│   ├── services/
+│   │   ├── document.py
+│   │   ├── llm.py
+│   │   ├── retrieval.py
+│   │   └── vector_db.py
+│   ├── __init__.py
+│   └── main.py
+├── tests/
+│   ├── test_api.py
+│   ├── test_document.py
+│   └── test_vector_db.py
+├── .dockerignore
+├── .gitignore
+├── Dockerfile
+├── README.md
+└── requirements.txt
 ```
+
+## Տեղադրում և local run
+
+### 1. Clone արեք repository-ն
+
+```bash
+git clone <repository-url>
+cd rag-assistant
+```
+
+### 2. Ստեղծեք virtual environment
+
+```bash
+python -m venv .venv
+```
+
+Windows PowerShell-ում ակտիվացրեք այն՝
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Linux/macOS-ում՝
+
+```bash
+source .venv/bin/activate
+```
+
+### 3. Տեղադրեք dependencies-ը
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 4. Ստեղծեք `.env` ֆայլը
+
+Project root-ում ստեղծեք `.env`՝ հետևյալ պարունակությամբ․
+
+```dotenv
+ANTHROPIC_API_KEY=your_anthropic_api_key
+```
+
+> Մի commit արեք `.env` ֆայլը և երբեք source code-ում կամ README-ում մի պահեք իրական API key։
+
+### 5. Գործարկեք API-ն
+
+```bash
+python -m uvicorn app.main:app --reload
+```
+
+Հասանելի հասցեներ՝
+
+- Swagger UI՝ <http://localhost:8000/docs>
+- ReDoc՝ <http://localhost:8000/redoc>
+- Health check՝ <http://localhost:8000/health>
+
+Առաջին գործարկման ժամանակ Sentence Transformers-ը կարող է ներբեռնել `all-MiniLM-L6-v2` model-ը։
 
 ## API endpoints
 
@@ -115,7 +148,7 @@ all-MiniLM-L6-v2
 GET /health
 ```
 
-Օրինակ response՝
+Response՝
 
 ```json
 {
@@ -130,21 +163,35 @@ POST /documents
 Content-Type: multipart/form-data
 ```
 
-Endpoint-ը՝
+Request-ի multipart field-ը կոչվում է `file`։ Endpoint-ը ընդունում է միայն `application/pdf` content type ունեցող ֆայլեր։
 
-- ընդունում է PDF ֆայլ,
-- ստանում է փաստաթղթի տեքստը,
-- տեքստը բաժանում է chunk-երի,
-- ստեղծում և հիշողության մեջ պահում է chunk embedding-ները։
+```bash
+curl -X POST "http://localhost:8000/documents" \
+  -H "accept: application/json" \
+  -F "file=@document.pdf;type=application/pdf"
+```
 
-### Հարց փաստաթղթի վերաբերյալ
+Response-ի օրինակ՝
+
+```json
+{
+  "document_id": "30f71b1a-c087-4c71-ae31-d93d6c98165d",
+  "filename": "document.pdf",
+  "characters": 18420,
+  "chunks": 47
+}
+```
+
+Յուրաքանչյուր document ստանում է UUID։ Դրա chunk-երը embedding-ի և metadata-ի հետ պահպանվում են ChromaDB-ում։
+
+### Հարց փաստաթղթերի վերաբերյալ
 
 ```http
 POST /ask
 Content-Type: application/json
 ```
 
-Օրինակ request՝
+Request-ի օրինակ՝
 
 ```json
 {
@@ -153,7 +200,9 @@ Content-Type: application/json
 }
 ```
 
-Օրինակ response-ի կառուցվածք՝
+`top_k`-ի default արժեքը `5` է։ Որոնումն իրականացվում է library-ում առկա բոլոր փաստաթղթերի chunk-երի միջով։ `0.85`-ից մեծ cosine distance ունեցող արդյունքները չեն փոխանցվում LLM-ին։
+
+Response-ի օրինակ՝
 
 ```json
 {
@@ -162,84 +211,168 @@ Content-Type: application/json
   "context": [
     {
       "text": "Customers can return products within 30 days of purchase.",
-      "score": 0.72
+      "distance": 0.18,
+      "metadata": {
+        "document_id": "30f71b1a-c087-4c71-ae31-d93d6c98165d",
+        "filename": "refund_policy.pdf",
+        "chunk_index": 2
+      }
     }
   ],
-  "answer": "Generated answer or constructed prompt"
+  "sources": [
+    {
+      "filename": "refund_policy.pdf",
+      "chunk_index": 2
+    }
+  ],
+  "answer": "Customers can return products within 30 days of purchase."
 }
 ```
 
-Եթե դեռ փաստաթուղթ չի բեռնվել, endpoint-ը վերադարձնում է `400 Bad Request`։
-
-## Նախագծի կառուցվածքը
+Եթե համապատասխան context չի գտնվել, endpoint-ը վերադարձնում է դատարկ `context` և `sources` arrays ու հետևյալ պատասխանը․
 
 ```text
-app/
-├── main.py
-├── api/
-│   └── routes.py
-├── models/
-│   └── schemas.py
-└── services/
-    ├── document.py
-    ├── retrieval.py
-    └── llm.py
+I don't know based on the provided documents.
 ```
 
-### `app/main.py`
+### Փաստաթղթերի library
 
-Ստեղծում է FastAPI application-ը և միացնում API router-ը։
+```http
+GET /library
+```
 
-### `app/api/routes.py`
+Response-ի օրինակ՝
 
-Պարունակում է HTTP endpoint-ները և կապում է համակարգի հիմնական փուլերը՝ document processing, retrieval և generation։
+```json
+{
+  "documents": [
+    {
+      "document_id": "30f71b1a-c087-4c71-ae31-d93d6c98165d",
+      "filename": "refund_policy.pdf"
+    }
+  ]
+}
+```
 
-### `app/models/schemas.py`
+### Փաստաթղթի ջնջում
 
-Պարունակում է Pydantic request և response model-ները։
+```http
+DELETE /library/{document_id}
+```
 
-### `app/services/document.py`
+```bash
+curl -X DELETE \
+  "http://localhost:8000/library/30f71b1a-c087-4c71-ae31-d93d6c98165d"
+```
 
-Պատասխանատու է՝
+Հաջող response՝
 
-- PDF-ից տեքստ ստանալու,
-- տեքստը chunk-երի բաժանելու համար։
+```json
+{
+  "status": "deleted",
+  "document_id": "30f71b1a-c087-4c71-ae31-d93d6c98165d"
+}
+```
 
-### `app/services/retrieval.py`
+Չգտնված `document_id`-ի դեպքում API-ն վերադարձնում է `404 Not Found`։ Ջնջումը ChromaDB-ից հեռացնում է տվյալ document-ին պատկանող բոլոր chunk-երը։
 
-Պատասխանատու է՝
+## Docker
 
-- embeddings ստեղծելու,
-- cosine similarity հաշվելու,
-- Top-K համապատասխան chunk-երը գտնելու համար։
+### Build
 
-### `app/services/llm.py`
+Project root-ից՝
 
-Պատասխանատու է retrieved context-ից prompt կառուցելու և հետագայում LLM provider-ի հետ աշխատելու համար։
+```bash
+docker build -t rag-assistant .
+```
+
+### Run
+
+```bash
+docker run --name rag-assistant-container \
+  -p 8000:8000 \
+  --env-file .env \
+  rag-assistant
+```
+
+Windows PowerShell-ում նույն command-ը մեկ տողով՝
+
+```powershell
+docker run --name rag-assistant-container -p 8000:8000 --env-file .env rag-assistant
+```
+
+`.dockerignore`-ը image-ի մեջ չի պատճենում local `.env`-ը, virtual environment-ը, Git history-ն և `chroma_db/` տվյալները։ Այդ պատճառով նոր container-ը սկսում է դատարկ vector database-ով։
+
+### ChromaDB persistence Docker-ում
+
+Container-ը ջնջելուց հետո vector data-ն պահպանելու համար օգտագործեք named volume՝
+
+```bash
+docker run --name rag-assistant-container \
+  -p 8000:8000 \
+  --env-file .env \
+  -v rag-assistant-chroma:/app/chroma_db \
+  rag-assistant
+```
+
+Արդեն ստեղծված container-ը կրկին գործարկելու համար՝
+
+```bash
+docker start -a rag-assistant-container
+```
+
+## Tests
+
+Գործարկեք ամբողջ test suite-ը՝
+
+```bash
+pytest -v
+```
+
+Ներկա tests-ը ստուգում են՝
+
+- health endpoint-ը,
+- document upload-ի հաջող և սխալ դեպքերը,
+- context-ով և առանց համապատասխան context-ի `/ask` behavior-ը,
+- chunking-ը և դրա validation rules-ը,
+- ChromaDB document lookup/delete/library helper-ները։
+
+API tests-ում retrieval և LLM calls-ը mock են արված, ուստի test suite-ը չի ուղարկում իրական request Anthropic API-ին։
+
+## Persistence և տվյալների պահպանում
+
+Local run-ի ժամանակ ChromaDB-ն տվյալները պահում է project root-ի `chroma_db/` directory-ում։ Server restart-ը չի ջնջում դրանք։ Յուրաքանչյուր chunk-ի metadata-ն ներառում է՝
+
+- `document_id`
+- `filename`
+- `chunk_index`
+
+Uploaded PDF-ի original binary file-ը չի պահպանվում․ պահպանվում են միայն extracted chunks-ը, embeddings-ը և metadata-ն։
 
 ## Ներկա սահմանափակումները
 
-- Chunk-երը և embedding-ները պահվում են միայն RAM-ում և server restart-ից հետո կորչում են։
-- Միաժամանակ տարբեր փաստաթղթերի առանձին կառավարում դեռ չկա։
-- Vector database դեռ չի օգտագործվում։
-- Generation փուլը ներկայում կառուցում և վերադարձնում է prompt-ը, բայց իրական LLM API call դեռ չի կատարում։
-- PDF text extraction-ը նախատեսված է text-based PDF-ների համար և OCR չի կատարում։
+- Աջակցվում են միայն text-based PDF-ները․ scanned PDF-ների համար OCR չկա։
+- Chunking-ը character-based է և չի հաշվի առնում sentence կամ token boundaries-ը։
+- `/ask` որոնում է բոլոր բեռնված փաստաթղթերի միջով և դեռ չունի կոնկրետ `document_id`-ով filter։
+- Source citations-ը filename և chunk index metadata են, ոչ թե PDF page number։
+- Uploaded original PDF files-ը չեն պահպանվում։
 - Authentication, authorization և rate limiting դեռ իրականացված չեն։
-- Retrieval-ի որակը դեռ գնահատված չէ առանձին evaluation dataset-ով։
+- Anthropic API-ի հասանելիությունն ու օգտագործման արժեքը կախված են արտաքին service-ից։
+- Docker container-ի տվյալները container removal-ից հետո կկորչեն, եթե volume չօգտագործվի։
+- Retrieval և answer quality-ի համար evaluation dataset ու metrics դեռ չկան։
 
-## Հաջորդ քայլերը
+## Հաջորդ հնարավոր բարելավումները
 
-1. Միացնել իրական LLM provider և վերադարձնել վերջնական բնական լեզվով պատասխանը։
-2. Ավելացնել vector database, օրինակ՝ PostgreSQL + pgvector։
-3. Պահպանել փաստաթղթերը, chunk-երը և metadata-ն persistent storage-ում։
-4. Ավելացնել document ID և մի քանի փաստաթղթի անկախ կառավարում։
-5. Բարելավել chunking ռազմավարությունը՝ կիրառելով overlap և token-based սահմաններ։
-6. Ավելացնել source citation-ներ՝ պատասխանի հետ վերադարձնելով օգտագործված chunk-երը։
-7. Ավելացնել OCR աջակցություն scanned PDF-ների համար։
-8. Ավելացնել automated tests՝ document processing, retrieval և API endpoint-ների համար։
-9. Չափել retrieval-ի և վերջնական պատասխանների որակը evaluation dataset-ով։
-10. Ավելացնել authentication, logging և error handling production օգտագործման համար։
+- Token-aware կամ semantic chunking
+- PDF page number-ով ավելի ճշգրիտ citations
+- `document_id`-ով scoped search
+- OCR scanned documents-ի համար
+- Configurable embedding և LLM models
+- Authentication և per-user document isolation
+- Structured logging, monitoring և rate limiting
+- Retrieval/answer evaluation pipeline
+- Production database և object storage
 
 ## Նախագծի կարգավիճակը
 
-Նախագիծը գտնվում է զարգացման փուլում։ PDF processing-ը, chunking-ը, embeddings-ի ստեղծումը, similarity search-ը և prompt construction-ը արդեն կազմում են աշխատող հիմնական pipeline։ Հաջորդ առանցքային փուլը իրական LLM integration-ն է։
+Նախագիծը աշխատող portfolio MVP է․ իրականացված են PDF ingestion-ը, persistent vector storage-ը, semantic retrieval-ը, Anthropic LLM generation-ը, source metadata-ն, document library management-ը, automated tests-ը և Docker setup-ը։ Այն նախատեսված է ուսումնական և demo օգտագործման համար և production deployment-ից առաջ պահանջում է security, observability ու scalability լրացումներ։
